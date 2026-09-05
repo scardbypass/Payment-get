@@ -29,13 +29,14 @@ export async function findGmailPayment(
     const lock = await client.getMailboxLock('INBOX');
     try {
       const expectedSender = config.provider === 'jago' ? 'noreply@jago.com' : 'receipts@blubybcadigital.id';
-      for await (const message of client.fetch(
-        { from: 1, internalDate: { since: start, before: new Date(end.getTime() + 86_400_000) } },
-        { source: true, uid: true, internalDate: true }
-      )) {
+      const uids = await client.search({
+        since: start,
+        before: new Date(end.getTime() + 86_400_000),
+        from: expectedSender
+      }, { uid: true });
+
+      for await (const message of client.fetch(uids, { source: true, uid: true, internalDate: true }, { uid: true })) {
         const parsed = await simpleParser(message.source);
-        const senderMatches = parsed.from?.value.some((item) => item.address?.toLowerCase() === expectedSender);
-        if (!senderMatches) continue;
         const when = message.internalDate ?? parsed.date;
         if (when && (when < start || when > end)) continue;
         const text = parsed.text ?? parsed.html?.replace(/<[^>]+>/g, ' ') ?? '';
