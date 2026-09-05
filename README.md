@@ -7,7 +7,7 @@ Payment-Get adalah fondasi SaaS payment gateway multi-tenant yang siap dideploy 
 - Login menggunakan username atau Gmail.
 - Dashboard web modern dan responsive.
 - Subscription plan default Rp90.000/bulan; aktivasi subscription dilakukan admin/provider billing.
-- Admin dapat membuat banyak payment account (Jago/BCA/GoPay/QRIS/provider lain) dan mengatur priority/weight/status.
+- Admin dapat membuat banyak payment account (Jago/BCA/GoPay/Livin Merchant/QRIS/provider lain) dan mengatur priority/weight/status.
 - Personal account per user dan shared account milik admin.
 - Payment dengan unique code 0–999 dan idempotency key.
 - Atomic wallet balance + pending + ledger untuk withdrawal.
@@ -44,10 +44,26 @@ Payment-Get adalah fondasi SaaS payment gateway multi-tenant yang siap dideploy 
 Set `DB_PASSWORD`, `DB_ROOT_PASSWORD`, `JWT_SECRET`, `ENCRYPTION_KEY`, `APP_URL`, dan `CORS_ORIGINS`, lalu jalankan `docker compose up -d --build`.
 
 ## Provider pembayaran
-Payment-Get sengaja tidak meng-hardcode credential atau endpoint bank yang tidak terdokumentasi. Adapter provider harus menggunakan akun yang dimiliki/diizinkan oleh operator dan API/notification channel resmi atau service internal yang memang diotorisasi. Untuk Jago/Blu berbasis email notification, BCA melalui service KlikBCA milik operator, dan GoPay/QRIS melalui provider resmi, buat adapter di `src/providers/` dan arahkan hasil mutasi ke `settlePayment()`.
+Payment-Get sengaja tidak meng-hardcode credential atau endpoint bank yang tidak terdokumentasi. Adapter provider harus menggunakan akun yang dimiliki/diizinkan oleh operator dan API/notification channel resmi atau service internal yang memang diotorisasi.
+
+### Livin' Merchant — Bank Mandiri
+Bank Mandiri secara resmi mendokumentasikan Livin' Merchant sebagai aplikasi merchant untuk menerima QRIS, termasuk QRIS statis/dinamis, notifikasi transaksi, riwayat transaksi, dan pencairan. citeturn0search2turn0search3
+
+Untuk integrasi server-to-server, Bank Mandiri juga menyediakan **Mandiri API** dengan fitur informasi transaksi/mutasi dan QRIS, melalui portal developer resmi dan proses onboarding bisnis/compliance. Kontrak endpoint production tidak dipublikasikan pada halaman umum, sehingga Payment-Get tidak melakukan reverse-engineering login aplikasi Livin' Merchant. citeturn0search0
+
+Adapter aman tersedia di `src/providers/livin-merchant.ts`. Adapter tersebut:
+- memakai boundary provider `livin_merchant`;
+- memverifikasi HMAC-SHA256 untuk notification payload jika channel resmi menyediakan signature;
+- menormalisasi transaction ID, nominal, status, outlet, dan waktu transaksi;
+- sengaja tidak menyimpan password/OTP Livin dan tidak mengotomatisasi login aplikasi.
+
+Setelah operator memperoleh kontrak API/webhook resmi dari Bank Mandiri, payload dapat diarahkan ke adapter ini lalu hasil `SUCCESS` diteruskan ke `settlePayment()` untuk pencocokan nominal dan kredit wallet.
+
+### Provider lain
+Untuk Jago/Blu berbasis email notification, BCA melalui service KlikBCA milik operator, dan GoPay/QRIS melalui provider resmi, buat adapter di `src/providers/` dan arahkan hasil mutasi ke `settlePayment()`.
 
 ## WhatsApp
 Jalankan `npm run dev:bot` untuk development atau `npm run build && npm run start:bot` untuk production. Scan QR yang muncul di terminal menggunakan WhatsApp milik operator. Bot tidak mengirim broadcast massal dan hanya menjalankan command transaksi yang diautentikasi.
 
 ## Catatan produksi
-Codebase ini sudah diperkeras untuk deployment, tetapi **status payment tetap tidak boleh dianggap otomatis sukses hanya karena endpoint tersedia**. Integrasi mutasi Jago/Blu/BCA/GoPay/QRIS harus dikonfigurasi dengan credential dan kontrak API/notification yang benar. Jangan menaruh credential provider di source code.
+Codebase ini sudah diperkeras untuk deployment, tetapi **status payment tetap tidak boleh dianggap otomatis sukses hanya karena endpoint tersedia**. Integrasi mutasi Jago/Blu/BCA/GoPay/QRIS/Livin' Merchant harus dikonfigurasi dengan credential dan kontrak API/notification yang benar. Jangan menaruh credential provider di source code.
