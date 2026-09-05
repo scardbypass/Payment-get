@@ -1,0 +1,13 @@
+import express from 'express';
+import { authRouter } from './routes/auth.js';
+import { apiRouter } from './routes/api.js';
+import { adminRouter } from './routes/admin.js';
+import { expireOldPayments } from './services/unique-code.js';
+const app = express();
+app.use(express.json());
+app.get('/health', (_, res) => res.json({ ok: true, service: 'payment-get' }));
+app.use('/auth', authRouter);
+app.use('/api/v1', apiRouter);
+app.use('/admin', adminRouter);
+setInterval(() => expireOldPayments().catch(console.error), 60_000);
+app.listen(3000, () => console.log('Payment-Get API listening on :3000'));
