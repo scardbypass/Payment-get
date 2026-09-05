@@ -1,0 +1,28 @@
+import {Router} from 'express';
+import {db} from '../db.js';
+import {decrypt,hmac} from '../services/security.js';
+import {settlePayment} from '../services/settlement.js';
+import {normalizeLivinTransaction,verifyLivinSignature} from '../providers/livin-merchant.js';
+
+export const webhookRouter=Router();
+webhookRouter.use((req,res,next)=>{if(!req.is('application/json'))return res.status(415).json({error:'JSON_REQUIRED'});next()});
+
+async function processProvider(provider:string,accountId:number,payload:any,rawBody:string,signature:string|undefined){
+ const account=await db.paymentAccount.findUnique({where:{id:accountId},select:{id:true,provider:true,status:true,webhookSecretRef:true}});
+ if(!account||account.provider!==provider)throw new Error('PROVIDER_ACCOUNT_NOT_FOUND');
+ if(account.status!=='ACTIVE')throw new Error('PROVIDER_ACCOUNT_INACTIVE');
+ if(!account.webhookSecretRef)throw new Error('WEBHOOK_SECRET_NOT_CONFIGURED');
+ const secret=decrypt(account.webhookSecretRef);
+ if(!signature)throw new Error('SIGNATURE_REQUIRED');
+ const valid=provider==='livin_merchant'?verifyLivinSignature(rawBody,signature,secret):hmac(secret,rawBody)===signature.trim().toLowerCase();
+ if(!valid)throw new Error('INVALID_SIGNATURE');
+ const tx=provider==='livin_merchant'?normalizeLivinTransaction(payload):normalizeGeneric(payload);
+ if(tx.status!=='SUCCESS')return {ok:true,matched:false,status:tx.status,transactionId:tx.transactionId};
+ const payment=await db.payment.findFirst({where:{accountId,status:{in:['PENDING','DETECTED']},payableAmount:tx.amount},orderBy:{createdAt:'asc'},select:{paymentId:true}});
+ if(!payment)return {ok:true,matched:false,status:'SUCCESS',transactionId:tx.transactionId,reason:'PAYMENT_NOT_FOUND'};
+ await settlePayment(payment.paymentId,tx.amount,tx.transactionId);
+ return {ok:true,matched:true,paymentId:payment.paymentId,status:'SUCCESS',transactionId:tx.transactionId};
+}
+function normalizeGeneric(input:any){const transactionId=String(input?.transactionId??input?.transaction_id??input?.reference??input?.referenceNo??'').trim();const rawAmount=input?.amount??input?.transactionAmount??input?.transaction_amount;const amount=typeof rawAmount==='number'?rawAmount:Number(String(rawAmount??'').replace(/[^0-9.-]/g,''));const rawStatus=String(input?.status??input?.transactionStatus??'').toUpperCase();if(!transactionId)throw new Error('TRANSACTION_ID_REQUIRED');if(!Number.isFinite(amount)||amount<=0)throw new Error('AMOUNT_INVALID');return {transactionId,amount,status:['SUCCESS','PAID','COMPLETED','SETTLED'].includes(rawStatus)?'SUCCESS':rawStatus};}
+
+webhookRouter.post('/:provider/:accountId',async(req:any,res)=>{try{const provider=String(req.params.provider).toLowerCase();if(!['jago','blu','bca','gopay','livin_merchant'].includes(provider))return res.status(404).json({error:'PROVIDER_NOT_SUPPORTED'});const raw=JSON.stringify(req.body);const result=await processProvider(provider,Number(req.params.accountId),req.body,raw,req.get('x-payment-get-signature')??req.get('x-signature')??undefined);res.json(result)}catch(e:any){const code=['INVALID_SIGNATURE','SIGNATURE_REQUIRED'].includes(e.message)?401:['PAYMENT_NOT_FOUND','PROVIDER_ACCOUNT_NOT_FOUND','PROVIDER_ACCOUNT_INACTIVE','WEBHOOK_SECRET_NOT_CONFIGURED'].includes(e.message)?409:400;res.status(code).json({error:e.message??'WEBHOOK_ERROR'})}});
