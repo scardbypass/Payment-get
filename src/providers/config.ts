@@ -6,11 +6,6 @@ const gmail = {
   gmailAppPassword: z.string().min(8),
 };
 
-const base = z.object({
-  label: z.string().max(191).optional(),
-  ...gmail,
-});
-
 export const providerConfig = z.discriminatedUnion('provider', [
   z.object({ provider: z.literal('jago'), ...gmail, language: z.enum(['id', 'en']).default('id'), label: z.string().max(191).optional() }),
   z.object({ provider: z.literal('blu'), ...gmail, label: z.string().max(191).optional() }),
