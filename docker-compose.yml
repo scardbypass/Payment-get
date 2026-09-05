@@ -1,0 +1,43 @@
+services:
+  db:
+    image: mariadb:11.4
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: payment_get
+      MARIADB_USER: payment_get
+      MARIADB_PASSWORD: ${DB_PASSWORD}
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+    volumes:
+      - payment_get_db:/var/lib/mysql
+    healthcheck:
+      test: ["CMD","healthcheck.sh","--connect","--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: mysql://payment_get:${DB_PASSWORD}@db:3306/payment_get
+      JWT_SECRET: ${JWT_SECRET}
+      APP_URL: ${APP_URL}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      WEBHOOK_TIMEOUT_MS: ${WEBHOOK_TIMEOUT_MS:-8000}
+      SUBSCRIPTION_PRICE: ${SUBSCRIPTION_PRICE:-90000}
+      PAYMENT_TTL_MINUTES: ${PAYMENT_TTL_MINUTES:-30}
+    ports:
+      - "3000:3000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - wa_auth:/app/data/wa-auth
+volumes:
+  payment_get_db:
+  wa_auth:
