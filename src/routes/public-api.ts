@@ -1,0 +1,7 @@
+import {Router} from 'express'; import {z} from 'zod'; import {resolveApiKey} from '../services/api-key.js'; import {createPayment} from '../services/payment.js'; import {db} from '../db.js';
+export const publicApiRouter=Router();
+async function keyAuth(req:any,res:any,next:any){const key=String(req.headers.authorization??'').replace(/^Bearer\s+/,'');const u=await resolveApiKey(key);if(!u)return res.status(401).json({error:'INVALID_API_KEY'});req.userId=u.id;next()}
+publicApiRouter.use(keyAuth);
+publicApiRouter.post('/payments',async(req:any,res)=>{try{const x=z.object({amount:z.number().int().positive(),reference:z.string().trim().min(1).max(191)}).parse(req.body);const p=await createPayment(req.userId,x);res.status(201).json({paymentId:p.paymentId,amount:Number(p.amount),payableAmount:Number(p.payableAmount),uniqueCode:p.uniqueCode,status:p.status,expiresAt:p.expiresAt})}catch(e:any){res.status(409).json({error:e.message})}});
+publicApiRouter.get('/payments/:id',async(req:any,res)=>{const p=await db.payment.findFirst({where:{paymentId:req.params.id,userId:req.userId},select:{paymentId:true,reference:true,amount:true,payableAmount:true,uniqueCode:true,status:true,providerRef:true,paidAt:true,expiresAt:true}});if(!p)return res.status(404).json({error:'NOT_FOUND'});res.json(p)});
+publicApiRouter.get('/balance',async(req:any,res)=>{const w=await db.wallet.findUnique({where:{userId:req.userId}});res.json({balance:w?.balance??0,pending:w?.pending??0})});
