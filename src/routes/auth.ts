@@ -1,8 +1,5 @@
-import { Router } from 'express';
-import { z } from 'zod';
-import { db } from '../db.js';
-import { hashPassword, verifyPassword, signToken } from '../auth.js';
-export const authRouter = Router();
-const register = z.object({name:z.string().min(2),username:z.string().min(3).max(40),email:z.string().email(),phone:z.string().min(8),password:z.string().min(8)});
-authRouter.post('/register', async (req,res)=>{try{const x=register.parse(req.body);const u=await db.user.create({data:{...x,passwordHash:await hashPassword(x.password),wallet:{create:{}}},select:{id:true,name:true,username:true,email:true,phone:true}});res.status(201).json({user:u,token:signToken(u.id)});}catch(e:any){res.status(400).json({error:e.message});}});
-authRouter.post('/login', async (req,res)=>{try{const x=z.object({login:z.string().min(1),password:z.string().min(1)}).parse(req.body);const u=await db.user.findFirst({where:{OR:[{username:x.login},{email:x.login}]}});if(!u||!(await verifyPassword(x.password,u.passwordHash)))return res.status(401).json({error:'INVALID_CREDENTIALS'});res.json({token:signToken(u.id),user:{id:u.id,name:u.name,username:u.username,email:u.email,role:u.role}});}catch(e:any){res.status(400).json({error:e.message});}});
+import {Router} from 'express'; import {z} from 'zod'; import {db} from '../db.js'; import {hashPassword,verifyPassword,signToken} from '../auth.js';
+export const authRouter=Router();
+const register=z.object({name:z.string().trim().min(2).max(100),username:z.string().trim().regex(/^[a-zA-Z0-9_.-]{3,40}$/),email:z.string().trim().toLowerCase().email().max(191),phone:z.string().trim().regex(/^\+?[0-9]{8,20}$/),password:z.string().min(8).max(128)});
+authRouter.post('/register',async(req,res)=>{try{const x=register.parse(req.body);const u=await db.user.create({data:{name:x.name,username:x.username,email:x.email,phone:x.phone,passwordHash:await hashPassword(x.password),wallet:{create:{}}},select:{id:true,name:true,username:true,email:true,phone:true,role:true}});res.status(201).json({user:u,token:signToken(u.id)})}catch(e:any){if(e?.code==='P2002')return res.status(409).json({error:'USERNAME_EMAIL_OR_PHONE_EXISTS'});res.status(400).json({error:'INVALID_REGISTRATION'})}});
+authRouter.post('/login',async(req,res)=>{try{const x=z.object({login:z.string().trim().min(1).max(191),password:z.string().min(1).max(128)}).parse(req.body);const u=await db.user.findFirst({where:{OR:[{username:x.login},{email:x.login.toLowerCase()}]}});if(!u||u.status!=='ACTIVE'||!(await verifyPassword(x.password,u.passwordHash)))return res.status(401).json({error:'INVALID_CREDENTIALS'});res.json({token:signToken(u.id),user:{id:u.id,name:u.name,username:u.username,email:u.email,role:u.role}})}catch{res.status(400).json({error:'INVALID_REQUEST'})}});
